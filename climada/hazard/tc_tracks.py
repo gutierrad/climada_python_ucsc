@@ -532,6 +532,9 @@ class TCTracks():
             provider = [provider]
 
         phys_vars = ['lat', 'lon', 'wind', 'pres', 'rmw', 'poci', 'roci']
+        #DAVID
+        if provider[0] in ['usa', 'reunion', 'bom']:
+            phys_vars.append('r34')
         for tc_var in phys_vars:
             if "official" in provider or "official_3h" in provider:
                 ibtracs_add_official_variable(
@@ -550,7 +553,10 @@ class TCTracks():
             ibtracs_ds[tc_var] = all_vals.isel(agency=preferred_idx)
 
             selected_ags = np.array([v[:-len(f'_{tc_var}')].encode() for v in ag_vars])
-            ibtracs_ds[f'{tc_var}_agency'] = ('storm', selected_ags[preferred_idx.values])
+            if tc_var == 'r34':
+                ibtracs_ds[f'{tc_var}_agency'] = (['storm','quadrants'], selected_ags[preferred_idx.values])
+            else:
+                ibtracs_ds[f'{tc_var}_agency'] = ('storm', selected_ags[preferred_idx.values])
 
             if tc_var == 'lon':
                 # Most IBTrACS longitudes are either normalized to [-180, 180] or to [0, 360], but
@@ -567,7 +573,7 @@ class TCTracks():
                                  & (ibtracs_ds[tc_var] < 0)).values
                 ibtracs_ds[tc_var].values[crossing_mask] += 360
 
-            if interpolate_missing:
+            if interpolate_missing and tc_var != 'r34':
                 with warnings.catch_warnings():
                     # Upstream issue, see https://github.com/pydata/xarray/issues/4167
                     warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -689,19 +695,35 @@ class TCTracks():
                 provider_str = "ibtracs_mixed:" + ",".join(
                     "{}({})".format(v, track_ds[f'{v}_agency'].astype(str).item())
                     for v in phys_vars)
-
-            data_vars = {
+            if 'r34' in phys_vars:
+                data_vars = {
                 'radius_max_wind': ('time', track_ds.rmw.data),
                 'radius_oci': ('time', track_ds.roci.data),
+                'radius_34': (['quadrant','time'], track_ds.r34.data), #DAVID
                 'max_sustained_wind': ('time', track_ds.wind.data),
                 'central_pressure': ('time', track_ds.pres.data),
                 'environmental_pressure': ('time', track_ds.poci.data),
-            }
-            coords = {
+                }
+                coords = {
                 'time': ('time', track_ds.time.dt.round('s').data),
                 'lat': ('time', track_ds.lat.data),
                 'lon': ('time', track_ds.lon.data),
-            }
+                'quadrant': ('quadrant',track_ds.quadrant.data), #DAVID
+                }
+            else:
+                data_vars = {
+                    'radius_max_wind': ('time', track_ds.rmw.data),
+                    'radius_oci': ('time', track_ds.roci.data),
+                    'max_sustained_wind': ('time', track_ds.wind.data),
+                    'central_pressure': ('time', track_ds.pres.data),
+                    'environmental_pressure': ('time', track_ds.poci.data),
+                }
+                coords = {
+                'time': ('time', track_ds.time.dt.round('s').data),
+                'lat': ('time', track_ds.lat.data),
+                'lon': ('time', track_ds.lon.data),
+                }
+            
             attrs = {
                 'max_sustained_wind_unit': 'kn',
                 'central_pressure_unit': 'mb',
